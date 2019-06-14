@@ -204,6 +204,7 @@
 #include "config.h"
 #endif
 
+#include <stdlib.h>
 #include <string.h>
 #include <gst/gst.h>
 
@@ -480,6 +481,9 @@ struct _GstPlayBin
   GList *contexts;
 
   gboolean is_live;
+
+  const gchar *apreferred;
+  const gchar *vpreferred;
 };
 
 struct _GstPlayBinClass
@@ -1585,6 +1589,9 @@ gst_play_bin_init (GstPlayBin * playbin)
 
   playbin->multiview_mode = GST_VIDEO_MULTIVIEW_FRAME_PACKING_NONE;
   playbin->multiview_flags = GST_VIDEO_MULTIVIEW_FLAGS_NONE;
+
+  playbin->apreferred = g_getenv ("PLAYBIN2_PREFERRED_AUDIOSINK");
+  playbin->vpreferred = g_getenv ("PLAYBIN2_PREFERRED_VIDEOSINK");
 }
 
 static void
@@ -4722,6 +4729,7 @@ autoplug_select_cb (GstElement * decodebin, GstPad * pad,
   GSequence *ave_seq = NULL;
   GSequenceIter *seq_iter;
   gboolean created_sink = FALSE;
+  const gchar *preferred = NULL;
 
   playbin = group->playbin;
 
@@ -4782,6 +4790,29 @@ autoplug_select_cb (GstElement * decodebin, GstPad * pad,
       ave_list = g_list_sort (ave_list, (GCompareFunc) avelement_compare);
     } else {
       ave_list = g_list_prepend (ave_list, NULL);
+    }
+
+    if (isaudiodec)
+      preferred = playbin->apreferred;
+    else if (isvideodec)
+      preferred = playbin->vpreferred;
+
+    if (preferred) {
+      for (l = ave_list; l; l = l->next) {
+        ave = (GstAVElement *) l->data;
+
+        if (ave && ave->sink &&
+            !strcmp (preferred, GST_OBJECT_NAME (ave->sink))) {
+          GST_DEBUG_OBJECT (playbin,
+              "Preferred sink '%s' for decoder '%s'",
+              gst_plugin_feature_get_name (GST_PLUGIN_FEATURE (ave->sink)),
+              gst_plugin_feature_get_name (GST_PLUGIN_FEATURE (factory)));
+
+          ave_list = g_list_delete_link (ave_list, l);
+          ave_list = g_list_prepend (ave_list, ave);
+          break;
+        }
+      }
     }
 
     /* if it is a decoder and we don't have a fixed sink, then find out
