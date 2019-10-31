@@ -292,6 +292,9 @@ if get_option('default_library') == 'static'
   gst_plugins_base_args += ['-DGST_STATIC_COMPILATION']
 endif
 
+rga_dep = dependency('librga', required: false)
+core_conf.set('HAVE_RGA', rga_dep.found())
+
 # X11 checks are for sys/ and tests/
 x11_dep = dependency('x11', required : get_option('x11'))
 # GLib checks are for the entire project
