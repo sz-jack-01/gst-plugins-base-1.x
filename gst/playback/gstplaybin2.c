@@ -319,6 +319,9 @@ struct _GstSourceGroup
   GstElement *video_sink;
   GstElement *text_sink;
 
+  /* Avoid multiple about to finish handling */
+  gboolean pending_about_to_finish;
+
   /* uridecodebins for uri and subtitle uri */
   GstElement *uridecodebin;
   GstElement *suburidecodebin;
@@ -3933,6 +3936,12 @@ drained_cb (GstElement * decodebin, GstSourceGroup * group)
 
   GST_DEBUG_OBJECT (playbin, "about to finish in group %p", group);
 
+  if (group->pending_about_to_finish) {
+    GST_DEBUG_OBJECT (playbin,
+        "Pending about to finish for group uri %s, do not handle.", group->uri);
+    return;
+  }
+
   /* after this call, we should have a next group to activate or we EOS */
   g_signal_emit (G_OBJECT (playbin),
       gst_play_bin_signals[SIGNAL_ABOUT_TO_FINISH], 0, NULL);
@@ -3940,6 +3949,7 @@ drained_cb (GstElement * decodebin, GstSourceGroup * group)
   /* now activate the next group. If the app did not set a uri, this will
    * fail and we can do EOS */
   setup_next_source (playbin, GST_STATE_PAUSED);
+  group->pending_about_to_finish = TRUE;
 }
 
 /* Like gst_element_factory_can_sink_any_caps() but doesn't
@@ -5515,6 +5525,7 @@ activate_group (GstPlayBin * playbin, GstSourceGroup * group, GstState target)
   /* allow state changes of the playbin affect the group elements now */
   group_set_locked_state_unlocked (playbin, group, FALSE);
   group->active = TRUE;
+  group->pending_about_to_finish = FALSE;
   GST_SOURCE_GROUP_UNLOCK (group);
 
   return state_ret;
