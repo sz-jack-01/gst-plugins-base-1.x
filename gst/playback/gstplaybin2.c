@@ -337,6 +337,7 @@ struct _GstSourceGroup
   gulong notify_source_id;
   gulong source_setup_id;
   gulong drained_id;
+  gulong wait_on_eos_id;
   gulong autoplug_factories_id;
   gulong autoplug_select_id;
   gulong autoplug_continue_id;
@@ -3952,6 +3953,30 @@ drained_cb (GstElement * decodebin, GstSourceGroup * group)
   group->pending_about_to_finish = TRUE;
 }
 
+static gboolean
+wait_on_eos_cb (GstElement * decodebin, guint eos_received,
+    GstSourceGroup * group)
+{
+  GstPlayBin *playbin = group->playbin;
+  int i;
+  guint active_pads = 0;
+
+  for (i = 0; i < PLAYBIN_STREAM_LAST; i++) {
+    GstSourceCombine *combine = &group->combiner[i];
+    if (combine->has_active_pad)
+      active_pads++;
+  }
+
+  GST_DEBUG_OBJECT (playbin,
+      "%d eos received in group with uri %s, active pads %d", eos_received,
+      group->uri, active_pads);
+
+  if (eos_received < active_pads)
+    return TRUE;
+
+  return FALSE;
+}
+
 /* Like gst_element_factory_can_sink_any_caps() but doesn't
  * allow ANY caps on the sinkpad template */
 static gboolean
@@ -5421,6 +5446,10 @@ activate_group (GstPlayBin * playbin, GstSourceGroup * group, GstState target)
   group->drained_id =
       g_signal_connect (uridecodebin, "drained", G_CALLBACK (drained_cb),
       group);
+  /* is called when the uridecodebin received an EOS */
+  group->wait_on_eos_id =
+      g_signal_connect (uridecodebin, "wait-on-eos",
+      G_CALLBACK (wait_on_eos_cb), group);
 
   /* will be called when a new media type is found. We return a list of decoders
    * including sinks for decodebin to try */
@@ -5594,6 +5623,7 @@ error_cleanup:
       REMOVE_SIGNAL (group->uridecodebin, group->notify_source_id);
       REMOVE_SIGNAL (group->uridecodebin, group->source_setup_id);
       REMOVE_SIGNAL (group->uridecodebin, group->drained_id);
+      REMOVE_SIGNAL (group->uridecodebin, group->wait_on_eos_id);
       REMOVE_SIGNAL (group->uridecodebin, group->autoplug_factories_id);
       REMOVE_SIGNAL (group->uridecodebin, group->autoplug_select_id);
       REMOVE_SIGNAL (group->uridecodebin, group->autoplug_continue_id);
@@ -5683,6 +5713,7 @@ deactivate_group (GstPlayBin * playbin, GstSourceGroup * group)
     REMOVE_SIGNAL (group->uridecodebin, group->notify_source_id);
     REMOVE_SIGNAL (group->uridecodebin, group->source_setup_id);
     REMOVE_SIGNAL (group->uridecodebin, group->drained_id);
+    REMOVE_SIGNAL (group->uridecodebin, group->wait_on_eos_id);
     REMOVE_SIGNAL (group->uridecodebin, group->autoplug_factories_id);
     REMOVE_SIGNAL (group->uridecodebin, group->autoplug_select_id);
     REMOVE_SIGNAL (group->uridecodebin, group->autoplug_continue_id);
