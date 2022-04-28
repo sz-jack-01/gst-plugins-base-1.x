@@ -4239,7 +4239,7 @@ beach:
 
   *drained = chain->drained;
 
-  if (*drained && !chain->parent)       /* only emit signal from top chain */
+  if (*drained)
     g_signal_emit (dbin, gst_decode_bin_signals[SIGNAL_DRAINED], 0, NULL);
 
   return handled;
