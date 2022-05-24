@@ -506,7 +506,8 @@ static GstStaticCaps _dma_buf_upload_caps =
     GST_STATIC_CAPS (GST_VIDEO_CAPS_MAKE_WITH_FEATURES
     (GST_CAPS_FEATURE_MEMORY_DMABUF,
         GST_GL_MEMORY_VIDEO_FORMATS_STR) ";"
-    GST_VIDEO_CAPS_MAKE (GST_GL_MEMORY_VIDEO_FORMATS_STR));
+    GST_VIDEO_CAPS_MAKE (GST_GL_MEMORY_VIDEO_FORMATS_STR) ";"
+    GST_VIDEO_CAPS_MAKE ("{NV12, NV12_10LE40}") ", arm-afbc = (int) 1");
 
 static gpointer
 _dma_buf_upload_new (GstGLUpload * upload)
@@ -2427,6 +2428,9 @@ static gboolean
 _gst_gl_upload_set_caps_unlocked (GstGLUpload * upload, GstCaps * in_caps,
     GstCaps * out_caps)
 {
+  GstStructure *s;
+  gint value;
+
   g_return_val_if_fail (upload != NULL, FALSE);
   g_return_val_if_fail (gst_caps_is_fixed (in_caps), FALSE);
 
@@ -2440,6 +2444,15 @@ _gst_gl_upload_set_caps_unlocked (GstGLUpload * upload, GstCaps * in_caps,
 
   gst_video_info_from_caps (&upload->priv->in_info, in_caps);
   gst_video_info_from_caps (&upload->priv->out_info, out_caps);
+
+  /* parse AFBC from caps */
+  s = gst_caps_get_structure (in_caps, 0);
+  if (gst_structure_get_int (s, "arm-afbc", &value)) {
+    if (value)
+      GST_VIDEO_INFO_SET_AFBC (&upload->priv->in_info);
+    else
+      GST_VIDEO_INFO_UNSET_AFBC (&upload->priv->in_info);
+  }
 
   upload->priv->method = NULL;
   upload->priv->method_impl = NULL;

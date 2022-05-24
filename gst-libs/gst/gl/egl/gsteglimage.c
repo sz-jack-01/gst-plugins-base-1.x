@@ -629,6 +629,19 @@ _drm_direct_fourcc_from_info (const GstVideoInfo * info)
 
   GST_DEBUG ("Getting DRM fourcc for %s", gst_video_format_to_string (format));
 
+  if (GST_VIDEO_INFO_IS_AFBC (info)) {
+    /* Mali uses these formats instead */
+    if (format == GST_VIDEO_FORMAT_NV12)
+      return DRM_FORMAT_YUV420_8BIT;
+    else if (format == GST_VIDEO_FORMAT_NV12_10LE40)
+      return DRM_FORMAT_YUV420_10BIT;
+    else if (format == GST_VIDEO_FORMAT_NV16)
+      return DRM_FORMAT_YUYV;
+
+    GST_INFO ("unsupported format for AFBC");
+    return -1;
+  }
+
   switch (format) {
     case GST_VIDEO_FORMAT_YUY2:
       return DRM_FORMAT_YUYV;
@@ -711,6 +724,9 @@ _drm_direct_fourcc_from_info (const GstVideoInfo * info)
 
     case GST_VIDEO_FORMAT_xBGR:
       return DRM_FORMAT_RGBX8888;
+
+    case GST_VIDEO_FORMAT_NV12_10LE40:
+      return DRM_FORMAT_NV15;
 
     default:
       GST_INFO ("Unsupported format for direct DMABuf.");
@@ -867,10 +883,12 @@ gst_egl_image_from_dmabuf_direct_target (GstGLContext * context,
 {
 
   EGLImageKHR img;
+  GstVideoFormat format = GST_VIDEO_INFO_FORMAT (in_info);
   guint n_planes = GST_VIDEO_INFO_N_PLANES (in_info);
   gint fourcc;
   gint i;
   gboolean with_modifiers;
+  guint64 modifier = DRM_FORMAT_MOD_LINEAR;
 
   /* Explanation of array length:
    * - 6 plane independent values are at the start (width, height, format FourCC)
@@ -880,6 +898,7 @@ gst_egl_image_from_dmabuf_direct_target (GstGLContext * context,
    */
   guintptr attribs[41];         /* 6 + 10 * 3 + 4 + 1 */
   gint atti = 0;
+  gfloat stride_scale = 1.0f;
 
   if (!gst_egl_image_check_dmabuf_direct (context, in_info, target))
     return NULL;
@@ -887,6 +906,22 @@ gst_egl_image_from_dmabuf_direct_target (GstGLContext * context,
   fourcc = _drm_direct_fourcc_from_info (in_info);
   with_modifiers = gst_gl_context_check_feature (context,
       "EGL_EXT_image_dma_buf_import_modifiers");
+
+  if (GST_VIDEO_INFO_IS_AFBC (in_info)) {
+    if (!with_modifiers)
+      return NULL;
+
+    /* Mali uses these formats instead */
+    if (format == GST_VIDEO_FORMAT_NV12)
+      stride_scale = 1.5;
+    else if (format == GST_VIDEO_FORMAT_NV12_10LE40)
+      stride_scale = 1.5;
+    else if (format == GST_VIDEO_FORMAT_NV16)
+      stride_scale = 2;
+
+    modifier = DRM_AFBC_MODIFIER;
+    n_planes = 1;
+  }
 
   /* EGL DMABuf importation supports a maximum of 3 planes */
   if (G_UNLIKELY (n_planes > 3))
@@ -906,12 +941,12 @@ gst_egl_image_from_dmabuf_direct_target (GstGLContext * context,
     attribs[atti++] = EGL_DMA_BUF_PLANE0_OFFSET_EXT;
     attribs[atti++] = offset[0];
     attribs[atti++] = EGL_DMA_BUF_PLANE0_PITCH_EXT;
-    attribs[atti++] = in_info->stride[0];
+    attribs[atti++] = in_info->stride[0] * stride_scale;
     if (with_modifiers) {
       attribs[atti++] = EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT;
-      attribs[atti++] = DRM_FORMAT_MOD_LINEAR & 0xffffffff;
+      attribs[atti++] = modifier & 0xffffffff;
       attribs[atti++] = EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT;
-      attribs[atti++] = (DRM_FORMAT_MOD_LINEAR >> 32) & 0xffffffff;
+      attribs[atti++] = (modifier >> 32) & 0xffffffff;
     }
   }
 
@@ -925,9 +960,9 @@ gst_egl_image_from_dmabuf_direct_target (GstGLContext * context,
     attribs[atti++] = in_info->stride[1];
     if (with_modifiers) {
       attribs[atti++] = EGL_DMA_BUF_PLANE1_MODIFIER_LO_EXT;
-      attribs[atti++] = DRM_FORMAT_MOD_LINEAR & 0xffffffff;
+      attribs[atti++] = modifier & 0xffffffff;
       attribs[atti++] = EGL_DMA_BUF_PLANE1_MODIFIER_HI_EXT;
-      attribs[atti++] = (DRM_FORMAT_MOD_LINEAR >> 32) & 0xffffffff;
+      attribs[atti++] = (modifier >> 32) & 0xffffffff;
     }
   }
 
@@ -941,9 +976,9 @@ gst_egl_image_from_dmabuf_direct_target (GstGLContext * context,
     attribs[atti++] = in_info->stride[2];
     if (with_modifiers) {
       attribs[atti++] = EGL_DMA_BUF_PLANE2_MODIFIER_LO_EXT;
-      attribs[atti++] = DRM_FORMAT_MOD_LINEAR & 0xffffffff;
+      attribs[atti++] = modifier & 0xffffffff;
       attribs[atti++] = EGL_DMA_BUF_PLANE2_MODIFIER_HI_EXT;
-      attribs[atti++] = (DRM_FORMAT_MOD_LINEAR >> 32) & 0xffffffff;
+      attribs[atti++] = (modifier >> 32) & 0xffffffff;
     }
   }
 
