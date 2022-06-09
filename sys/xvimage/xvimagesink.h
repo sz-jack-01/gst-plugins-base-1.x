@@ -134,6 +134,8 @@ struct _GstXvImageSink
   /* saved render rectangle until we have a window */
   gboolean pending_render_rect;
   GstVideoRectangle render_rect;
+
+  guintptr xwindow_id;
 };
 
 struct _GstXvImageSinkClass
